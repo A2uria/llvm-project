@@ -1781,8 +1781,8 @@ public:
   /// De-allocate the task context structure.
   void freeStructPtr();
 
-  MutableArrayRef<llvm::Value *> getLLVMPrivateVars() {
-    return llvmPrivateVars;
+  MutableArrayRef<llvm::Value *> getLLVMPrivateVarGEPs() {
+    return llvmPrivateVarGEPs;
   }
 
   llvm::Value *getStructPtr() { return structPtr; }
@@ -1797,7 +1797,7 @@ private:
 
   /// LLVM values for each private variable, or null if that private variable is
   /// not included in the task context structure
-  SmallVector<llvm::Value *> llvmPrivateVars;
+  SmallVector<llvm::Value *> llvmPrivateVarGEPs;
 
   /// A pointer to the structure containing context for this task.
   llvm::Value *structPtr = nullptr;
@@ -1841,19 +1841,19 @@ void TaskContextStructManager::createGEPsToPrivateVars() {
   }
 
   // Create GEPs for each struct member
-  llvmPrivateVars.clear();
-  llvmPrivateVars.reserve(privateDecls.size());
+  llvmPrivateVarGEPs.clear();
+  llvmPrivateVarGEPs.reserve(privateDecls.size());
   llvm::Value *zero = builder.getInt32(0);
   unsigned i = 0;
   for (auto privDecl : privateDecls) {
     if (!privDecl.readsFromMold()) {
       // Handle this inside of the task so we don't pass unnessecary vars in
-      llvmPrivateVars.push_back(nullptr);
+      llvmPrivateVarGEPs.push_back(nullptr);
       continue;
     }
     llvm::Value *iVal = builder.getInt32(i);
     llvm::Value *gep = builder.CreateGEP(structTy, structPtr, {zero, iVal});
-    llvmPrivateVars.push_back(gep);
+    llvmPrivateVarGEPs.push_back(gep);
     i += 1;
   }
 }
@@ -1948,7 +1948,7 @@ convertOmpTaskOp(omp::TaskOp taskOp, llvm::IRBuilderBase &builder,
 
   for (auto [privDecl, mlirPrivVar, blockArg, llvmPrivateVarAlloc] :
        llvm::zip_equal(privateDecls, mlirPrivateVars, privateBlockArgs,
-                       taskStructMgr.getLLVMPrivateVars())) {
+                       taskStructMgr.getLLVMPrivateVarGEPs())) {
     if (!privDecl.readsFromMold())
       // to be handled inside the task
       continue;
@@ -1987,7 +1987,7 @@ convertOmpTaskOp(omp::TaskOp taskOp, llvm::IRBuilderBase &builder,
   // firstprivate copy region
   setInsertPointForPossiblyEmptyBlock(builder, copyBlock);
   if (failed(copyFirstPrivateVars(builder, moduleTranslation, mlirPrivateVars,
-                                  taskStructMgr.getLLVMPrivateVars(),
+                                  taskStructMgr.getLLVMPrivateVarGEPs(),
                                   privateDecls)))
     return llvm::failure();
 
@@ -2030,7 +2030,7 @@ convertOmpTaskOp(omp::TaskOp taskOp, llvm::IRBuilderBase &builder,
     // Find and map the addresses of each variable within the task context
     // structure
     taskStructMgr.createGEPsToPrivateVars();
-    llvm::copy(taskStructMgr.getLLVMPrivateVars(),
+    llvm::copy(taskStructMgr.getLLVMPrivateVarGEPs(),
                std::back_inserter(llvmPrivateVars));
     for (auto [blockArg, llvmPrivateVar] :
          llvm::zip_equal(privateBlockArgs, llvmPrivateVars)) {
