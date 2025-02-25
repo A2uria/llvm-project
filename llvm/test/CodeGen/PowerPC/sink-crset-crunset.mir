@@ -1,0 +1,27 @@
+# RUN: llc -run-pass=machine-sink -mtriple=powerpc64-unknown-linux-gnu -o - %s | FileCheck %s
+
+---
+name:            sink-crset-crunset
+body:             |
+  ; CHECK-LABEL: bb.0.entry
+  bb.0.entry:
+    successors: %bb.1(0x40000000), %bb.2(0x40000000)
+    liveins: $r3
+    ; CHECK-NOT: CRSET
+    ; CHECK-NOT: CRUNSET
+    %cond:crrc = CMPLWI killed renamable $r3, 0
+    %a:crbitrc = CRSET
+    %b:crbitrc = CRUNSET
+    BCC 76, killed %cond, %bb.2
+  ; CHECK-LABEL: bb.1
+  bb.1:
+    ; CHECK-DAG: %a:crbitrc = CRSET
+    ; CHECK-DAG: %b:crbitrc = CRUNSET
+    ; CHECK-DAG: %and:crbitrc = CRAND killed %a, %b
+    %and:crbitrc = CRAND killed %a, %b
+  ; CHECK-LABEL: bb.2
+  bb.2:
+    ; CHECK: BLR
+    BLR implicit $lr, implicit $rm
+
+...
